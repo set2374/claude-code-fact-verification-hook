@@ -48,6 +48,24 @@ NON_ASSERTIVE_PATTERNS = [
     r"\bto verify this,? i need\b",
 ]
 
+RESPONSE_SHAPE_HEADINGS = {
+    "bottom_line": [
+        r"(?im)^\s*(?:[#>*-]\s*)*(?:\*\*|__)?bottom line(?:\*\*|__)?\s*:",
+        r"(?im)^\s*(?:[#>*-]\s*)*(?:\*\*|__)?direct answer(?:\*\*|__)?\s*:",
+    ],
+    "verified_facts": [
+        r"(?im)^\s*(?:[#>*-]\s*)*(?:\*\*|__)?verified facts?(?:\*\*|__)?\s*:",
+        r"(?im)^\s*(?:[#>*-]\s*)*(?:\*\*|__)?what verifies(?:\*\*|__)?\s*:",
+    ],
+    "analysis": [
+        r"(?im)^\s*(?:[#>*-]\s*)*(?:\*\*|__)?analysis(?:\*\*|__)?\s*:",
+        r"(?im)^\s*(?:[#>*-]\s*)*(?:\*\*|__)?reasoned analysis(?:\*\*|__)?\s*:",
+    ],
+    "sources": [
+        r"(?im)^\s*(?:[#>*-]\s*)*(?:\*\*|__)?sources?(?:\*\*|__)?\s*:",
+    ],
+}
+
 
 def first_nonempty(data: dict, keys: list[str]) -> str:
     for key in keys:
@@ -147,6 +165,50 @@ def response_has_verification_caveat(text: str) -> bool:
     return any(re.search(pattern, text, re.IGNORECASE) for pattern in FACT_CAVEAT_PATTERNS)
 
 
+def required_shape_keys(shape_mode: str) -> list[str]:
+    if shape_mode == "analysis_brief":
+        return ["bottom_line", "verified_facts", "analysis", "sources"]
+    if shape_mode == "factual_brief":
+        return ["bottom_line", "verified_facts", "sources"]
+    return []
+
+
+def shape_label(shape_key: str) -> str:
+    return {
+        "bottom_line": "Bottom line",
+        "verified_facts": "Verified facts",
+        "analysis": "Analysis",
+        "sources": "Sources",
+    }.get(shape_key, shape_key)
+
+
+def response_has_heading(text: str, shape_key: str) -> bool:
+    return any(re.search(pattern, text) for pattern in RESPONSE_SHAPE_HEADINGS.get(shape_key, []))
+
+
+def response_has_source_links(text: str) -> bool:
+    return bool(
+        re.search(r"\[[^\]]+\]\(https?://", text, re.IGNORECASE)
+        or re.search(r"https?://", text, re.IGNORECASE)
+    )
+
+
+def missing_response_shape_parts(text: str, shape_mode: str) -> list[str]:
+    missing: list[str] = []
+    for shape_key in required_shape_keys(shape_mode):
+        if shape_key == "sources":
+            if not response_has_heading(text, shape_key) or not response_has_source_links(text):
+                missing.append(shape_label(shape_key))
+            continue
+        if not response_has_heading(text, shape_key):
+            missing.append(shape_label(shape_key))
+    return missing
+
+
+def build_required_shape_lines(shape_mode: str) -> str:
+    return "\n".join(f"{shape_label(shape_key)}:" for shape_key in required_shape_keys(shape_mode))
+
+
 def truthy(value) -> bool:
     if isinstance(value, bool):
         return value
@@ -164,8 +226,6 @@ def main() -> None:
     if not config.get("enabled", True):
         output_allow()
     if not (has_marker(state_dir, "fact_verification_required") or has_marker(state_dir, "freshness_required")):
-        output_allow()
-    if has_marker(state_dir, "fact_verification_satisfied"):
         output_allow()
 
     assistant_text = get_last_assistant_message(data)
@@ -195,9 +255,28 @@ def main() -> None:
             f"{freshness_note}"
             "A caveat alone is not enough for this prompt. Before ending the turn, perform at least one verification step "
             "using a reliable source such as local files, trusted MCP data, or an authoritative web search/fetch.\n"
+            "Do not front-load substantive analysis before verifying. If you need an interim visible response, keep it to one short sentence "
+            "acknowledging the question and saying you are checking the facts first.\n"
         )
 
+    shape_mode = ""
+    if has_marker(state_dir, "response_shape_required"):
+        shape_mode = (read_marker(state_dir, "response_shape_mode") or "").strip()
+    if shape_mode:
+        missing_parts = missing_response_shape_parts(assistant_text, shape_mode)
+        if missing_parts:
+            output_block_stop(
+                "[FACTUAL VERIFICATION GATE — RESPONSE SHAPE]\n"
+                "Verification-sensitive responses must use the required structure before ending the turn.\n"
+                f"Missing or malformed sections: {', '.join(missing_parts)}\n"
+                f"Required structure:\n{build_required_shape_lines(shape_mode)}\n"
+                "Include at least one source link under Sources:.\n"
+            )
+
     if response_has_verification_caveat(assistant_text):
+        output_allow()
+
+    if has_marker(state_dir, "fact_verification_satisfied"):
         output_allow()
 
     reason = read_marker(state_dir, "fact_verification_reason") or "material factual assertion risk"

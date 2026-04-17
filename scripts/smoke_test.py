@@ -71,6 +71,16 @@ def main() -> None:
         "session_id": SESSION,
         "last_assistant_message": "The latest hook schema includes Stop, PreToolUse, PostToolUse, and UserPromptSubmit.",
     }
+    structured_stop = {
+        "session_id": SESSION,
+        "last_assistant_message": (
+            "Bottom line: The latest Claude Code hook schema includes Stop, PreToolUse, PostToolUse, and UserPromptSubmit.\n"
+            "Verified facts:\n"
+            "- The current hook schema includes those event families in the tested configuration.\n"
+            "Sources:\n"
+            "- [Claude Code hooks docs](https://docs.anthropic.com/en/docs/claude-code/hooks)"
+        ),
+    }
     results.append(("stop_blocks_unverified", run("verification_stop_gate.py", unverified_stop)))
 
     verified_read = {
@@ -79,7 +89,8 @@ def main() -> None:
         "tool_input": {"file_path": str(ROOT / "README.md")},
     }
     results.append(("track_read", run("track_verification.py", verified_read)))
-    results.append(("stop_allows_verified", run("verification_stop_gate.py", unverified_stop)))
+    results.append(("stop_blocks_unstructured_after_verification", run("verification_stop_gate.py", unverified_stop)))
+    results.append(("stop_allows_structured_verified", run("verification_stop_gate.py", structured_stop)))
 
     if STATE.exists():
         shutil.rmtree(STATE)
@@ -101,7 +112,7 @@ def main() -> None:
         "tool_input": {"query": "latest Claude Code hook schema"},
     }
     results.append(("track_web_search", run("track_verification.py", searched)))
-    results.append(("stop_allows_websearch_verified", run("verification_stop_gate.py", unverified_stop)))
+    results.append(("stop_allows_websearch_verified", run("verification_stop_gate.py", structured_stop)))
 
     if STATE.exists():
         shutil.rmtree(STATE)
@@ -144,7 +155,8 @@ def main() -> None:
     expect("declarative_comparative_gate", result_map["declarative_comparative_gate"], lambda item: bool(item["stdout"]), failures)
     expect("stop_blocks_unverified", result_map["stop_blocks_unverified"], lambda item: "\"decision\": \"block\"" in item["stdout"], failures)
     expect("track_read", result_map["track_read"], lambda item: item["code"] == 0, failures)
-    expect("stop_allows_verified", result_map["stop_allows_verified"], lambda item: item["code"] == 0 and not item["stdout"], failures)
+    expect("stop_blocks_unstructured_after_verification", result_map["stop_blocks_unstructured_after_verification"], lambda item: "\"decision\": \"block\"" in item["stdout"], failures)
+    expect("stop_allows_structured_verified", result_map["stop_allows_structured_verified"], lambda item: item["code"] == 0 and not item["stdout"], failures)
     expect("stop_blocks_caveat_without_attempt", result_map["stop_blocks_caveat_without_attempt"], lambda item: "\"decision\": \"block\"" in item["stdout"], failures)
     expect("track_web_search", result_map["track_web_search"], lambda item: item["code"] == 0, failures)
     expect("stop_allows_websearch_verified", result_map["stop_allows_websearch_verified"], lambda item: item["code"] == 0 and not item["stdout"], failures)

@@ -190,6 +190,8 @@ FACT_MARKERS = [
     "fact_prompt_eval.json",
     "fact_verification_required",
     "freshness_required",
+    "response_shape_required",
+    "response_shape_mode",
     "fact_verification_reason",
     "fact_verification_attempted",
     "fact_verification_satisfied",
@@ -304,12 +306,29 @@ def write_prompt_eval(
     set_marker(state_dir, "fact_prompt_eval.json", json.dumps(payload, indent=2))
 
 
-def build_additional_context(freshness_required: bool, claim_sentence_count: int) -> str:
+def choose_response_shape_mode(claim_sentence_count: int) -> str:
+    return "analysis_brief" if claim_sentence_count >= 2 else "factual_brief"
+
+
+def required_response_shape(shape_mode: str) -> list[str]:
+    if shape_mode == "analysis_brief":
+        return ["Bottom line", "Verified facts", "Analysis", "Sources"]
+    return ["Bottom line", "Verified facts", "Sources"]
+
+
+def build_additional_context(freshness_required: bool, claim_sentence_count: int, shape_mode: str) -> str:
     context = (
         "Verification-first mode is active for this prompt. Before presenting material facts as established, "
         "verify them from reliable sources when possible. Reliable sources include local files, trusted MCP data, "
         "and direct web fetches or searches of authoritative sources. If verification cannot be completed after a good-faith attempt, label "
         "the statement as provisional or unverified instead of presenting it as confirmed fact."
+    )
+    context += (
+        " Do not provide substantive analysis, pushback, critique, or theory-testing before at least one verification step occurs. "
+        "If you say anything before verifying, limit it to one short sentence such as: "
+        "\"Interesting argument. Let me verify the facts first.\" Then immediately use tools. "
+        "After verification and reasoning, give a direct, thoughtful answer with calibrated confidence. "
+        "Do not turn the visible response into a self-critique, process diary, or long narration of your own failure mode unless verification genuinely failed or the sources materially conflict."
     )
     if freshness_required:
         context += " Current or time-sensitive claims deserve especially careful verification."
@@ -318,6 +337,11 @@ def build_additional_context(freshness_required: bool, claim_sentence_count: int
             " When the user advances a substantive thesis supported by factual predicates, decompose the major claims, verify them, "
             "and engage the argument on the merits. Do not substitute a purely structural or epistemic critique for analysis of the actual claims."
         )
+    required_sections = ", ".join(f"{section}:" for section in required_response_shape(shape_mode))
+    context += (
+        " Use this exact final-answer structure: {}. "
+        "Put source links under Sources: using markdown links where possible."
+    ).format(required_sections)
     return context
 
 
@@ -418,8 +442,11 @@ def main() -> None:
     set_marker(state_dir, "fact_verification_reason", reason)
     if freshness_required:
         set_marker(state_dir, "freshness_required", "true")
+    shape_mode = choose_response_shape_mode(claim_sentence_count)
+    set_marker(state_dir, "response_shape_required", "true")
+    set_marker(state_dir, "response_shape_mode", shape_mode)
 
-    context = build_additional_context(freshness_required, claim_sentence_count)
+    context = build_additional_context(freshness_required, claim_sentence_count, shape_mode)
     output_user_prompt_context(context)
 
 

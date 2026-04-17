@@ -16,7 +16,9 @@ The short version: this repo adds a verification-first gate so Claude Code is pu
 
 - verify first
 - assert second
-- caveat explicitly when verification did not happen
+- use a short verify-first preamble instead of premature analysis
+- return a structured final answer with sources
+- caveat explicitly when verification did not happen after a good-faith attempt
 
 ## Why this exists
 
@@ -44,7 +46,8 @@ This project adds a lightweight forcing function using Claude Code's native hook
 
 1. `UserPromptSubmit` classifies prompts that are likely to require factual verification.
 2. `PostToolUse` records when Claude actually performed a meaningful verification step.
-3. `Stop` blocks the turn from ending if Claude is about to make unsupported factual assertions without either verification evidence or an explicit caveat.
+3. `Stop` blocks the turn from ending if Claude is about to make unsupported factual assertions without a verification step.
+4. `Stop` also blocks verification-sensitive answers that ignore the required response structure.
 
 ## Design goals
 
@@ -106,15 +109,36 @@ This hook records evidence from:
 
 This hook allows the turn to end if:
 
-- verification evidence exists, or
-- the response clearly says it is provisional or unverified, or
+- verification evidence exists and the response uses the required structure, or
+- the response clearly says it is provisional or unverified after a verification attempt, or
 - Claude is just asking a clarifying question
 
 It blocks the turn if:
 
 - verification-sensitive mode is active, and
-- no meaningful verification evidence exists, and
-- the response reads like a factual answer rather than a caveated answer
+- no meaningful verification evidence exists, or
+- the response reads like a factual answer rather than a caveated answer, or
+- the answer skips the required deployment-friendly structure
+
+### 4. Response shape
+
+For verification-sensitive prompts, the hook set now pushes Claude toward:
+
+- one short sentence before research, if any
+- then tool use
+- then a final structured answer
+
+Default structures:
+
+- factual prompts:
+  - `Bottom line:`
+  - `Verified facts:`
+  - `Sources:`
+- theory-heavy / multi-claim prompts:
+  - `Bottom line:`
+  - `Verified facts:`
+  - `Analysis:`
+  - `Sources:`
 
 ## Is this an Opus 4.7 fix?
 
@@ -170,8 +194,10 @@ The smoke test checks that:
 
 - verification mode activates for a current/factual prompt
 - an unsupported factual answer gets blocked
-- a `Read` action satisfies the gate
-- a clearly provisional answer is allowed
+- a `Read` or `WebSearch` action can satisfy the gate
+- caveat-only without verification is blocked
+- unstructured answers are blocked even after verification
+- structured answers with source links pass
 
 ## Recommended tuning
 
