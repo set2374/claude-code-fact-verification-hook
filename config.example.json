@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "prompt_score_threshold": 2,
+  "trusted_mcp_patterns": [
+    "^mcp__.*courtlistener.*",
+    "^mcp__.*github.*",
+    "^mcp__.*google.*workspace.*",
+    "^mcp__.*google.*drive.*",
+    "^mcp__.*google.*calendar.*",
+    "^mcp__.*ms365.*",
+    "^mcp__.*outlook.*",
+    "^mcp__.*notion.*",
+    "^mcp__.*linear.*",
+    "^mcp__.*slack.*"
+  ]
+}
