@@ -1,6 +1,22 @@
 # Claude Code Fact Verification Hook
 
-A standalone Claude Code hook set that pushes the model toward: verify first, assert second.
+A standalone Claude Code hook set for stale facts, premature assertions, and "answer first, verify later" behavior in Claude Code, including the failure mode some users are now describing as an Opus 4.7 factual-verification problem.
+
+If you found this while searching for any of the following, you are in the right place:
+
+- Claude Code stale facts fix
+- Claude Code verify before assert
+- Claude Code fact checking hook
+- Opus 4.7 fix for wrong factual answers
+- Opus 4.7 not searching before answering
+- Claude Code current info wrong
+- Claude Code web search not triggered
+
+The short version: this repo adds a verification-first gate so Claude Code is pushed toward:
+
+- verify first
+- assert second
+- caveat explicitly when verification did not happen
 
 ## Why this exists
 
@@ -18,6 +34,12 @@ That is especially risky for:
 - laws, policies, and pricing
 - anything the user explicitly asked you to verify
 
+In practice, some users are experiencing this as:
+
+- "Claude or Opus 4.7 sounded confident but answered from training knowledge"
+- "Claude Code did not trigger web search because it thought it already knew"
+- "The answer sounded current, but it was wrong or stale"
+
 This project adds a lightweight forcing function using Claude Code's native hooks:
 
 1. `UserPromptSubmit` classifies prompts that are likely to require factual verification.
@@ -31,6 +53,7 @@ This project adds a lightweight forcing function using Claude Code's native hook
 - positive instruction style
 - minimal moving parts
 - easy to fork and tune
+- understandable as a practical fix for Claude Code and Opus 4.7 verification drift
 
 ## Why positive instructions
 
@@ -92,6 +115,18 @@ It blocks the turn if:
 - verification-sensitive mode is active, and
 - no meaningful verification evidence exists, and
 - the response reads like a factual answer rather than a caveated answer
+
+## Is this an Opus 4.7 fix?
+
+Partly, yes.
+
+More precisely:
+
+- this repo does not patch Anthropic's model weights
+- it does not change Claude Code's native search heuristics
+- it does add a host-side behavioral forcing function that is useful when Opus 4.7 or another Claude model answers factual questions from training knowledge too readily
+
+So if you are looking for a practical Opus 4.7 workaround, guardrail, or mitigation for stale factual answers, this repo is aimed directly at that problem.
 
 ## Install
 
@@ -166,6 +201,19 @@ This repo is meant to be a contributor-friendly entry point before larger govern
 - more tests
 - platform-specific install guides
 - more precise caveat detection
+
+## Search Notes
+
+This project is intentionally written for people searching for:
+
+- Claude Code factual verification hooks
+- Claude Code fact checking
+- Claude Code stale knowledge
+- Claude Code not using web search
+- Opus 4.7 verification fix
+- Opus 4.7 stale facts
+- Opus 4.7 current information workaround
+- verify-before-assert hooks for Claude Code
 
 ## References
 
