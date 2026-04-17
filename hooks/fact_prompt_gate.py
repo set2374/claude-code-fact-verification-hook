@@ -146,7 +146,44 @@ ASSERTIVE_CLAIM_VERB_PATTERNS = [
     r"\bconquer(?:s|ed)?\b",
 ]
 
+COMPARATIVE_CLAIM_PATTERNS = [
+    r"\blowest\b",
+    r"\bhighest\b",
+    r"\bmost\b",
+    r"\bleast\b",
+    r"\blargest\b",
+    r"\bsmallest\b",
+    r"\bbiggest\b",
+    r"\bbest\b",
+    r"\bworst\b",
+    r"\bfirst\b",
+    r"\blast\b",
+    r"\bonly\b",
+    r"\btop\b",
+    r"\bleading\b",
+    r"\bfastest\b",
+    r"\bslowest\b",
+    r"\bnewest\b",
+    r"\boldest\b",
+]
+
+EXISTENCE_CLAIM_PATTERNS = [
+    r"\bthere is no\b",
+    r"\bthere are no\b",
+    r"\bdoes not exist\b",
+    r"\bdoesn't exist\b",
+    r"\bdo not exist\b",
+    r"\bdon't exist\b",
+    r"\bno such\b",
+    r"\bexists\b",
+    r"\bexist\b",
+]
+
 ENTITY_HINT_PATTERN = re.compile(r"\b(?:[A-Z][a-z]+(?:[-'][A-Za-z]+)?|[A-Z]{2,}|\d{1,4})\b")
+LOWERCASE_SUBJECT_CLAIM_PATTERN = re.compile(
+    r"^(?:the\s+)?(?:[a-z0-9][\w&'-]*\s+){1,8}(?:is|are|was|were|has|have|had|can|cannot|can't|will|won't|would|should|must|did|does)\b",
+    re.IGNORECASE,
+)
 
 FACT_MARKERS = [
     "fact_prompt_hash",
@@ -226,7 +263,14 @@ def count_assertive_claim_sentences(text: str) -> tuple[int, list[str]]:
             continue
         if not has_any_pattern(lowered, ASSERTIVE_CLAIM_VERB_PATTERNS):
             continue
-        if not (ENTITY_HINT_PATTERN.search(sentence) or has_any_pattern(sentence, EXTERNAL_WORLD_PATTERNS)):
+        has_claim_anchor = (
+            ENTITY_HINT_PATTERN.search(sentence)
+            or has_any_pattern(sentence, EXTERNAL_WORLD_PATTERNS)
+            or has_any_pattern(lowered, COMPARATIVE_CLAIM_PATTERNS)
+            or has_any_pattern(lowered, EXISTENCE_CLAIM_PATTERNS)
+            or LOWERCASE_SUBJECT_CLAIM_PATTERN.search(sentence)
+        )
+        if not has_claim_anchor:
             continue
         count += 1
         if len(examples) < 3:
@@ -298,6 +342,14 @@ def classify_prompt(prompt: str, config: dict) -> tuple[bool, bool, str]:
     if has_any_pattern(lowered, USER_FACT_PATTERNS):
         score += 1
         reasons.append("user-supplied factual premise")
+
+    if has_any_pattern(lowered, COMPARATIVE_CLAIM_PATTERNS):
+        score += 2
+        reasons.append("comparative or superlative factual claim")
+
+    if has_any_pattern(lowered, EXISTENCE_CLAIM_PATTERNS):
+        score += 2
+        reasons.append("existence or non-existence claim")
 
     claim_sentence_count, claim_examples = count_assertive_claim_sentences(text)
     if claim_sentence_count >= 2:

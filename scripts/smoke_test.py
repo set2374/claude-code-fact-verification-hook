@@ -57,10 +57,15 @@ def main() -> None:
             "He now plans to neutralize Iran, cut off cheap oil flows, and drive an AI race before the decade is over."
         ),
     }
+    declarative_comparative_payload = {
+        "session_id": SESSION,
+        "prompt": "the mandalorian and gragu was the lowest grossing star wars move in history",
+    }
 
     failures: list[str] = []
     results.append(("prompt_gate", run("fact_prompt_gate.py", prompt_payload)))
     results.append(("narrative_prompt_gate", run("fact_prompt_gate.py", narrative_prompt_payload)))
+    results.append(("declarative_comparative_gate", run("fact_prompt_gate.py", declarative_comparative_payload)))
 
     unverified_stop = {
         "session_id": SESSION,
@@ -124,6 +129,7 @@ def main() -> None:
     result_map = dict(results)
     expect("prompt_gate", result_map["prompt_gate"], lambda item: bool(item["stdout"]), failures)
     expect("narrative_prompt_gate", result_map["narrative_prompt_gate"], lambda item: bool(item["stdout"]), failures)
+    expect("declarative_comparative_gate", result_map["declarative_comparative_gate"], lambda item: bool(item["stdout"]), failures)
     expect("stop_blocks_unverified", result_map["stop_blocks_unverified"], lambda item: "\"decision\": \"block\"" in item["stdout"], failures)
     expect("track_read", result_map["track_read"], lambda item: item["code"] == 0, failures)
     expect("stop_allows_verified", result_map["stop_allows_verified"], lambda item: item["code"] == 0 and not item["stdout"], failures)
