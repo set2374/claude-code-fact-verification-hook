@@ -89,7 +89,19 @@ def main() -> None:
         "session_id": SESSION,
         "last_assistant_message": "I have not independently verified this, so treat this as a provisional answer based on currently available information.",
     }
-    results.append(("stop_allows_caveat", run("verification_stop_gate.py", caveated_stop)))
+    results.append(("stop_blocks_caveat_without_attempt", run("verification_stop_gate.py", caveated_stop)))
+
+    if STATE.exists():
+        shutil.rmtree(STATE)
+    STATE.mkdir(parents=True, exist_ok=True)
+    run("fact_prompt_gate.py", prompt_payload)
+    searched = {
+        "session_id": SESSION,
+        "tool_name": "WebSearch",
+        "tool_input": {"query": "latest Claude Code hook schema"},
+    }
+    results.append(("track_web_search", run("track_verification.py", searched)))
+    results.append(("stop_allows_websearch_verified", run("verification_stop_gate.py", unverified_stop)))
 
     if STATE.exists():
         shutil.rmtree(STATE)
@@ -133,7 +145,9 @@ def main() -> None:
     expect("stop_blocks_unverified", result_map["stop_blocks_unverified"], lambda item: "\"decision\": \"block\"" in item["stdout"], failures)
     expect("track_read", result_map["track_read"], lambda item: item["code"] == 0, failures)
     expect("stop_allows_verified", result_map["stop_allows_verified"], lambda item: item["code"] == 0 and not item["stdout"], failures)
-    expect("stop_allows_caveat", result_map["stop_allows_caveat"], lambda item: item["code"] == 0 and not item["stdout"], failures)
+    expect("stop_blocks_caveat_without_attempt", result_map["stop_blocks_caveat_without_attempt"], lambda item: "\"decision\": \"block\"" in item["stdout"], failures)
+    expect("track_web_search", result_map["track_web_search"], lambda item: item["code"] == 0, failures)
+    expect("stop_allows_websearch_verified", result_map["stop_allows_websearch_verified"], lambda item: item["code"] == 0 and not item["stdout"], failures)
     expect("stop_blocks_missing_message", result_map["stop_blocks_missing_message"], lambda item: "\"decision\": \"block\"" in item["stdout"], failures)
     expect("py_compile", result_map["py_compile"], lambda item: item["code"] == 0, failures)
 

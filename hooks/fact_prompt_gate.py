@@ -304,6 +304,23 @@ def write_prompt_eval(
     set_marker(state_dir, "fact_prompt_eval.json", json.dumps(payload, indent=2))
 
 
+def build_additional_context(freshness_required: bool, claim_sentence_count: int) -> str:
+    context = (
+        "Verification-first mode is active for this prompt. Before presenting material facts as established, "
+        "verify them from reliable sources when possible. Reliable sources include local files, trusted MCP data, "
+        "and direct web fetches or searches of authoritative sources. If verification cannot be completed after a good-faith attempt, label "
+        "the statement as provisional or unverified instead of presenting it as confirmed fact."
+    )
+    if freshness_required:
+        context += " Current or time-sensitive claims deserve especially careful verification."
+    if claim_sentence_count >= 1:
+        context += (
+            " When the user advances a substantive thesis supported by factual predicates, decompose the major claims, verify them, "
+            "and engage the argument on the merits. Do not substitute a purely structural or epistemic critique for analysis of the actual claims."
+        )
+    return context
+
+
 def classify_prompt(prompt: str, config: dict) -> tuple[bool, bool, str]:
     text = prompt.strip()
     lowered = text.lower()
@@ -402,14 +419,7 @@ def main() -> None:
     if freshness_required:
         set_marker(state_dir, "freshness_required", "true")
 
-    context = (
-        "Verification-first mode is active for this prompt. Before presenting material facts as established, "
-        "verify them from reliable sources when possible. Reliable sources include local files, trusted MCP data, "
-        "and direct web fetches or searches of authoritative sources. If verification cannot be completed, label "
-        "the statement as provisional or unverified instead of presenting it as confirmed fact."
-    )
-    if freshness_required:
-        context += " Current or time-sensitive claims deserve especially careful verification."
+    context = build_additional_context(freshness_required, claim_sentence_count)
     output_user_prompt_context(context)
 
 

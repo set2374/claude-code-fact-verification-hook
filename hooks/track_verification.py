@@ -114,10 +114,8 @@ def track_read(tool_input: dict, state_dir) -> None:
 
 def track_web_search(tool_input: dict, state_dir) -> None:
     query = first_nonempty(tool_input, ["query", "q"])
-    set_marker(state_dir, "fact_verification_attempted", f"WebSearch:{query}")
-    set_marker(state_dir, "fact_verification_last_tool", "WebSearch")
-    if query:
-        set_marker(state_dir, "fact_verification_last_source", f"WebSearch query: {query}")
+    source_label = f"WebSearch query: {query}" if query else "WebSearch"
+    set_verification_marker(state_dir, "WebSearch", source_label)
 
 
 def track_web_fetch(tool_input: dict, state_dir) -> None:

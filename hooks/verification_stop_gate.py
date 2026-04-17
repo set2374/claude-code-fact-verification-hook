@@ -2,10 +2,10 @@
 Stop hook.
 
 Blocks the turn from ending when verification-first mode is active and Claude
-is about to make unsupported factual assertions without either:
+is about to make unsupported factual assertions without:
 
-1. real verification evidence, or
-2. a clear caveat that the answer is provisional or unverified.
+1. at least one actual verification step, and
+2. either verification evidence or a clear caveat that the answer is still provisional or unverified after that attempt.
 """
 
 from __future__ import annotations
@@ -181,6 +181,22 @@ def main() -> None:
         )
     if response_is_non_assertive(assistant_text):
         output_allow()
+
+    if not has_marker(state_dir, "fact_verification_attempted"):
+        reason = read_marker(state_dir, "fact_verification_reason") or "material factual assertion risk"
+        freshness_note = (
+            "Current or time-sensitive claims were detected for this prompt.\n"
+            if has_marker(state_dir, "freshness_required")
+            else ""
+        )
+        output_block_stop(
+            "[FACTUAL VERIFICATION GATE]\n"
+            f"Verification-first mode is active for this prompt because of: {reason}\n"
+            f"{freshness_note}"
+            "A caveat alone is not enough for this prompt. Before ending the turn, perform at least one verification step "
+            "using a reliable source such as local files, trusted MCP data, or an authoritative web search/fetch.\n"
+        )
+
     if response_has_verification_caveat(assistant_text):
         output_allow()
 
