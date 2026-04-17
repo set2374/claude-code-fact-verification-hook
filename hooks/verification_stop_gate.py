@@ -22,6 +22,7 @@ from common import (
     output_allow,
     output_block_stop,
     read_marker,
+    set_marker,
 )
 
 
@@ -133,7 +134,7 @@ def get_last_assistant_message(data: dict) -> str:
 
 def response_is_non_assertive(text: str) -> bool:
     if not text.strip():
-        return True
+        return False
     stripped = text.strip()
     if "?" not in stripped:
         return False
@@ -144,6 +145,12 @@ def response_is_non_assertive(text: str) -> bool:
 
 def response_has_verification_caveat(text: str) -> bool:
     return any(re.search(pattern, text, re.IGNORECASE) for pattern in FACT_CAVEAT_PATTERNS)
+
+
+def truthy(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def main() -> None:
@@ -162,6 +169,16 @@ def main() -> None:
         output_allow()
 
     assistant_text = get_last_assistant_message(data)
+    if not assistant_text.strip():
+        set_marker(state_dir, "fact_stop_missing_assistant_message", "true")
+        if truthy(data.get("stop_hook_active")):
+            output_allow()
+        output_block_stop(
+            "[FACTUAL VERIFICATION GATE]\n"
+            "Verification-first mode is active, but the Stop hook could not inspect Claude's final message.\n"
+            "Per Anthropic's current hook schema, Stop should include last_assistant_message.\n"
+            "Before ending the turn, restate the response with explicit verification status or verify the material facts first.\n"
+        )
     if response_is_non_assertive(assistant_text):
         output_allow()
     if response_has_verification_caveat(assistant_text):

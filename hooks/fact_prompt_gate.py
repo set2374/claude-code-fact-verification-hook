@@ -8,6 +8,7 @@ injects a verification-first instruction into Claude's working context.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 
 from common import (
@@ -70,6 +71,20 @@ EXTERNAL_WORLD_PATTERNS = [
     r"\bv?\d+\.\d+(?:\.\d+)?\b",
 ]
 
+USER_FACT_PATTERNS = [
+    r"\bi am\b",
+    r"\bi have\b",
+    r"\bi had\b",
+    r"\bwe are\b",
+    r"\bwe have\b",
+    r"\bit is\b",
+    r"\bit's\b",
+    r"\bit was\b",
+    r"\bthere is\b",
+    r"\bthere are\b",
+    r"\bthere was\b",
+]
+
 NON_FACTUAL_PATTERNS = [
     r"\btranslate\b",
     r"\brewrite\b",
@@ -92,8 +107,50 @@ CODE_ACTION_PATTERNS = [
     r"\bpush\b",
 ]
 
+ASSERTIVE_CLAIM_VERB_PATTERNS = [
+    r"\bis\b",
+    r"\bare\b",
+    r"\bwas\b",
+    r"\bwere\b",
+    r"\bhas\b",
+    r"\bhave\b",
+    r"\bhad\b",
+    r"\bcan\b",
+    r"\bcannot\b",
+    r"\bcan't\b",
+    r"\bwill\b",
+    r"\bwon't\b",
+    r"\bwould\b",
+    r"\bshould\b",
+    r"\bmust\b",
+    r"\bdid\b",
+    r"\bdoes\b",
+    r"\bannounced?\b",
+    r"\bbuilt\b",
+    r"\breleased?\b",
+    r"\bclosed?\b",
+    r"\bopened?\b",
+    r"\bmade\b",
+    r"\bcaused?\b",
+    r"\btriggered?\b",
+    r"\bplanned?\b",
+    r"\bplans\b",
+    r"\bpressured?\b",
+    r"\bproved?\b",
+    r"\bshowed?\b",
+    r"\bcut\b",
+    r"\breached?\b",
+    r"\bsecured?\b",
+    r"\bremoved?\b",
+    r"\bneutralized?\b",
+    r"\bconquer(?:s|ed)?\b",
+]
+
+ENTITY_HINT_PATTERN = re.compile(r"\b(?:[A-Z][a-z]+(?:[-'][A-Za-z]+)?|[A-Z]{2,}|\d{1,4})\b")
+
 FACT_MARKERS = [
     "fact_prompt_hash",
+    "fact_prompt_eval.json",
     "fact_verification_required",
     "freshness_required",
     "fact_verification_reason",
@@ -102,6 +159,7 @@ FACT_MARKERS = [
     "fact_verification_last_source",
     "fact_verification_last_tool",
     "fact_verification_last_domain",
+    "fact_stop_missing_assistant_message",
     "skip_fact_verification",
 ]
 
@@ -153,6 +211,55 @@ def has_any_pattern(text: str, patterns: list[str]) -> bool:
     return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
 
 
+def split_sentences(text: str) -> list[str]:
+    return [fragment.strip() for fragment in re.split(r"(?<=[.!?])\s+|\n+", text) if fragment.strip()]
+
+
+def count_assertive_claim_sentences(text: str) -> tuple[int, list[str]]:
+    count = 0
+    examples: list[str] = []
+    for sentence in split_sentences(text):
+        if len(sentence) < 30:
+            continue
+        lowered = sentence.lower()
+        if sentence.endswith("?"):
+            continue
+        if not has_any_pattern(lowered, ASSERTIVE_CLAIM_VERB_PATTERNS):
+            continue
+        if not (ENTITY_HINT_PATTERN.search(sentence) or has_any_pattern(sentence, EXTERNAL_WORLD_PATTERNS)):
+            continue
+        count += 1
+        if len(examples) < 3:
+            examples.append(sentence[:200])
+    return count, examples
+
+
+def write_prompt_eval(
+    state_dir,
+    prompt_hash: str,
+    require_verification: bool,
+    freshness_required: bool,
+    reason: str,
+    score: int,
+    threshold: int,
+    claim_sentence_count: int,
+    claim_examples: list[str],
+    reasons: list[str],
+) -> None:
+    payload = {
+        "prompt_hash": prompt_hash,
+        "require_verification": require_verification,
+        "freshness_required": freshness_required,
+        "reason": reason,
+        "score": score,
+        "threshold": threshold,
+        "claim_sentence_count": claim_sentence_count,
+        "claim_examples": claim_examples,
+        "reasons": reasons,
+    }
+    set_marker(state_dir, "fact_prompt_eval.json", json.dumps(payload, indent=2))
+
+
 def classify_prompt(prompt: str, config: dict) -> tuple[bool, bool, str]:
     text = prompt.strip()
     lowered = text.lower()
@@ -188,12 +295,23 @@ def classify_prompt(prompt: str, config: dict) -> tuple[bool, bool, str]:
     if has_any_pattern(text, EXTERNAL_WORLD_PATTERNS):
         score += 1
         reasons.append("external-world entity or version/date cue")
+    if has_any_pattern(lowered, USER_FACT_PATTERNS):
+        score += 1
+        reasons.append("user-supplied factual premise")
+
+    claim_sentence_count, claim_examples = count_assertive_claim_sentences(text)
+    if claim_sentence_count >= 2:
+        score += 3
+        reasons.append("multi-claim factual narrative")
+    elif claim_sentence_count == 1:
+        score += 1
+        reasons.append("single assertive factual claim")
 
     threshold = int(config.get("prompt_score_threshold", 2))
     require_verification = score >= threshold
     freshness_required = has_any_pattern(lowered, TEMPORAL_PATTERNS)
     reason = ", ".join(dict.fromkeys(reasons)) if reasons else "material factual assertion risk"
-    return require_verification, freshness_required, reason
+    return require_verification, freshness_required, reason, score, threshold, claim_sentence_count, claim_examples, reasons
 
 
 def main() -> None:
@@ -211,7 +329,19 @@ def main() -> None:
 
     set_marker(state_dir, "fact_prompt_hash", hashlib.sha256(prompt.encode("utf-8")).hexdigest())
 
-    require_verification, freshness_required, reason = classify_prompt(prompt, config)
+    require_verification, freshness_required, reason, score, threshold, claim_sentence_count, claim_examples, reasons = classify_prompt(prompt, config)
+    write_prompt_eval(
+        state_dir,
+        hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+        require_verification,
+        freshness_required,
+        reason,
+        score,
+        threshold,
+        claim_sentence_count,
+        claim_examples,
+        reasons,
+    )
     if not require_verification:
         return
 

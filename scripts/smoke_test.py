@@ -34,6 +34,11 @@ def run(script_name: str, payload: dict) -> dict:
     }
 
 
+def expect(name: str, result: dict, predicate, failures: list[str]) -> None:
+    if not predicate(result):
+        failures.append(f"{name} failed: {json.dumps(result, ensure_ascii=True)}")
+
+
 def main() -> None:
     if STATE.exists():
         shutil.rmtree(STATE)
@@ -44,8 +49,18 @@ def main() -> None:
         "session_id": SESSION,
         "prompt": "What is the latest Claude Code hook schema as of today?",
     }
+    narrative_prompt_payload = {
+        "session_id": SESSION,
+        "prompt": (
+            "I think many critics misunderstand the administration's plan. "
+            "Trump built new Gulf alliances and repositioned trade pressure against China. "
+            "He now plans to neutralize Iran, cut off cheap oil flows, and drive an AI race before the decade is over."
+        ),
+    }
 
+    failures: list[str] = []
     results.append(("prompt_gate", run("fact_prompt_gate.py", prompt_payload)))
+    results.append(("narrative_prompt_gate", run("fact_prompt_gate.py", narrative_prompt_payload)))
 
     unverified_stop = {
         "session_id": SESSION,
@@ -70,6 +85,16 @@ def main() -> None:
         "last_assistant_message": "I have not independently verified this, so treat this as a provisional answer based on currently available information.",
     }
     results.append(("stop_allows_caveat", run("verification_stop_gate.py", caveated_stop)))
+
+    if STATE.exists():
+        shutil.rmtree(STATE)
+    STATE.mkdir(parents=True, exist_ok=True)
+    run("fact_prompt_gate.py", narrative_prompt_payload)
+    missing_message_stop = {
+        "session_id": SESSION,
+        "stop_hook_active": False,
+    }
+    results.append(("stop_blocks_missing_message", run("verification_stop_gate.py", missing_message_stop)))
 
     py_compile = subprocess.run(
         [
@@ -96,7 +121,19 @@ def main() -> None:
         )
     )
 
+    result_map = dict(results)
+    expect("prompt_gate", result_map["prompt_gate"], lambda item: bool(item["stdout"]), failures)
+    expect("narrative_prompt_gate", result_map["narrative_prompt_gate"], lambda item: bool(item["stdout"]), failures)
+    expect("stop_blocks_unverified", result_map["stop_blocks_unverified"], lambda item: "\"decision\": \"block\"" in item["stdout"], failures)
+    expect("track_read", result_map["track_read"], lambda item: item["code"] == 0, failures)
+    expect("stop_allows_verified", result_map["stop_allows_verified"], lambda item: item["code"] == 0 and not item["stdout"], failures)
+    expect("stop_allows_caveat", result_map["stop_allows_caveat"], lambda item: item["code"] == 0 and not item["stdout"], failures)
+    expect("stop_blocks_missing_message", result_map["stop_blocks_missing_message"], lambda item: "\"decision\": \"block\"" in item["stdout"], failures)
+    expect("py_compile", result_map["py_compile"], lambda item: item["code"] == 0, failures)
+
     print(json.dumps(results, indent=2))
+    if failures:
+        raise SystemExit("\n".join(failures))
 
 
 if __name__ == "__main__":
