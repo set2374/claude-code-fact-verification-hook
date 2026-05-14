@@ -184,6 +184,166 @@ Use `settings.example.json` as a starting point and replace `<REPO_PATH>` with y
 
 Hook registration changes are safest after a restart or a fresh session.
 
+---
+
+## Platform-specific install guides
+
+Claude Code stores its settings file in a platform-specific location. The hook paths in `settings.example.json` must use absolute paths that are valid for your operating system.
+
+### macOS
+
+Claude Code settings file:
+```
+~/.claude/settings.json
+```
+
+Example absolute path for the cloned repo:
+```
+/Users/<your-username>/claude-code-fact-verification-hook
+```
+
+Full copy/paste example:
+```bash
+# Clone
+git clone https://github.com/<your-username>/claude-code-fact-verification-hook.git ~/claude-code-fact-verification-hook
+
+# Copy settings template
+cp ~/claude-code-fact-verification-hook/settings.example.json ~/.claude/settings.json
+
+# Replace the placeholder path with your real path
+sed -i '' 's|<REPO_PATH>|/Users/'"$(whoami)"'/claude-code-fact-verification-hook|g' ~/.claude/settings.json
+
+# Smoke test
+python3 ~/claude-code-fact-verification-hook/scripts/smoke_test.py
+```
+
+The `settings.json` hooks block will look like:
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"/Users/<your-username>/claude-code-fact-verification-hook/hooks/fact_prompt_gate.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+> **Note:** On macOS, use `python3` rather than `python` — the latter may point to the deprecated system Python 2.7 on older macOS versions.
+
+### Linux
+
+Claude Code settings file:
+```
+~/.claude/settings.json
+```
+
+Example absolute path for the cloned repo:
+```
+/home/<your-username>/claude-code-fact-verification-hook
+```
+
+Full copy/paste example:
+```bash
+# Clone
+git clone https://github.com/<your-username>/claude-code-fact-verification-hook.git ~/claude-code-fact-verification-hook
+
+# Copy settings template
+cp ~/claude-code-fact-verification-hook/settings.example.json ~/.claude/settings.json
+
+# Replace the placeholder path with your real path
+sed -i 's|<REPO_PATH>|/home/'"$(whoami)"'/claude-code-fact-verification-hook|g' ~/.claude/settings.json
+
+# Smoke test
+python3 ~/claude-code-fact-verification-hook/scripts/smoke_test.py
+```
+
+The `settings.json` hooks block will look like:
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"/home/<your-username>/claude-code-fact-verification-hook/hooks/fact_prompt_gate.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+> **Note:** On most modern Linux distributions, `python3` is the correct interpreter. If your distribution provides `python` as Python 3 (e.g., Arch Linux), that works too.
+
+### Windows
+
+Claude Code settings file:
+```
+%APPDATA%\Claude\settings.json
+```
+
+That typically expands to:
+```
+C:\Users\<your-username>\AppData\Roaming\Claude\settings.json
+```
+
+Example absolute path for the cloned repo:
+```
+C:\Users\<your-username>\claude-code-fact-verification-hook
+```
+
+Full copy/paste example (PowerShell):
+```powershell
+# Clone
+git clone https://github.com/<your-username>/claude-code-fact-verification-hook.git "$env:USERPROFILE\claude-code-fact-verification-hook"
+
+# Create Claude config directory if it doesn't exist
+New-Item -ItemType Directory -Force -Path "$env:APPDATA\Claude" | Out-Null
+
+# Copy settings template
+Copy-Item "$env:USERPROFILE\claude-code-fact-verification-hook\settings.example.json" "$env:APPDATA\Claude\settings.json"
+
+# Replace the placeholder path with your real path
+(Get-Content "$env:APPDATA\Claude\settings.json") `
+  -replace '<REPO_PATH>', "$env:USERPROFILE\claude-code-fact-verification-hook".Replace('\','\\') `
+  | Set-Content "$env:APPDATA\Claude\settings.json"
+
+# Smoke test
+python "$env:USERPROFILE\claude-code-fact-verification-hook\scripts\smoke_test.py"
+```
+
+The `settings.json` hooks block will look like:
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:\\Users\\<your-username>\\claude-code-fact-verification-hook\\hooks\\fact_prompt_gate.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+> **Note:** On Windows, use double backslashes (`\\`) in JSON strings for path separators, or forward slashes (`/`) which also work in most cases.
+
 ## Quick smoke test
 
 ```bash
