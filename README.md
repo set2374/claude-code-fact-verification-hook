@@ -152,6 +152,7 @@ More precisely:
 
 So if you are looking for a practical Opus 4.7 workaround, guardrail, or mitigation for stale factual answers, this repo is aimed directly at that problem.
 
+
 ## Install
 
 ### 1. Clone the repo
@@ -164,26 +165,73 @@ git clone https://github.com/<your-username>/claude-code-fact-verification-hook.
 
 This repo assumes you will reference the hook scripts by absolute path from your Claude Code settings.
 
+Recommended stable locations:
+
+| Platform | Path |
+|----------|------|
+| Windows | `C:\Users\<you>\.claude\hooks\fact-verification\` |
+| macOS | `/Users/<you>/.claude/hooks/fact-verification/` |
+| Linux | `/home/<you>/.claude/hooks/fact-verification/` |
+
 ### 3. Optional: create a config file
 
-Copy:
+Copy `config.example.json` to one of:
 
-- `config.example.json`
+| Platform | Config location |
+|----------|-----------------|
+| Windows | `%APPDATA%\claude-code-fact-verification\config.json` |
+| macOS | `~/.config/claude-code-fact-verification/config.json` |
+| Linux | `~/.config/claude-code-fact-verification/config.json` |
 
-Then set:
+Then set the environment variable:
 
-- `FACT_VERIFICATION_CONFIG_PATH`
+```bash
+# macOS / Linux
+export FACT_VERIFICATION_CONFIG_PATH=~/.config/claude-code-fact-verification/config.json
 
-if you want custom thresholds or MCP regex patterns.
+# Windows (PowerShell)
+$env:FACT_VERIFICATION_CONFIG_PATH = "$env:APPDATA\claude-code-fact-verification\config.json"
+```
 
 ### 4. Register the hooks
 
-Use `settings.example.json` as a starting point and replace `<REPO_PATH>` with your real absolute path.
+Claude Code settings live in:
+
+| Platform | Settings file |
+|----------|--------------|
+| Windows | `%APPDATA%\claude-code\settings.json` |
+| macOS | `~/Library/Application Support/claude-code/settings.json` |
+| Linux | `~/.config/claude-code/settings.json` |
+
+Use `settings.example.json` as a starting point. Replace `<REPO_PATH>` with the absolute path where you cloned this repo.
+
+**macOS / Linux example:**
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{"command": "python3 /Users/you/.claude/hooks/fact-verification/hooks/fact_prompt_gate.py"}],
+    "PostToolUse": [{"command": "python3 /Users/you/.claude/hooks/fact-verification/hooks/track_verification.py"}],
+    "Stop": [{"command": "python3 /Users/you/.claude/hooks/fact-verification/hooks/verification_stop_gate.py"}]
+  }
+}
+```
+
+**Windows example:**
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{"command": "python C:\\Users\\you\\.claude\\hooks\\fact-verification\\hooks\\fact_prompt_gate.py"}],
+    "PostToolUse": [{"command": "python C:\\Users\\you\\.claude\\hooks\\fact-verification\\hooks\\track_verification.py"}],
+    "Stop": [{"command": "python C:\\Users\\you\\.claude\\hooks\\fact-verification\\hooks\\verification_stop_gate.py"}]
+  }
+}
+```
 
 ### 5. Restart Claude Code
 
 Hook registration changes are safest after a restart or a fresh session.
-
 ## Quick smoke test
 
 ```bash
