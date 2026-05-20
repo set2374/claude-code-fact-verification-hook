@@ -180,6 +180,46 @@ if you want custom thresholds or MCP regex patterns.
 
 Use `settings.example.json` as a starting point and replace `<REPO_PATH>` with your real absolute path.
 
+#### macOS
+
+Claude Code settings commonly live under your home directory. Create the directory if it does not exist, then copy the example settings:
+
+```bash
+mkdir -p ~/.claude
+if [ ! -f ~/.claude/settings.json ]; then
+  cp settings.example.json ~/.claude/settings.json
+fi
+python3 - <<'PY'
+from pathlib import Path
+settings = Path.home() / ".claude" / "settings.json"
+repo = Path.cwd().resolve()
+settings.write_text(settings.read_text().replace("<REPO_PATH>", str(repo)))
+print(f"Updated {settings}")
+PY
+```
+
+If you already have `~/.claude/settings.json`, merge the `hooks` section manually instead of overwriting it.
+
+#### Linux
+
+The Linux setup is the same for most distributions:
+
+```bash
+mkdir -p ~/.claude
+if [ ! -f ~/.claude/settings.json ]; then
+  cp settings.example.json ~/.claude/settings.json
+fi
+python3 - <<'PY'
+from pathlib import Path
+settings = Path.home() / ".claude" / "settings.json"
+repo = Path.cwd().resolve()
+settings.write_text(settings.read_text().replace("<REPO_PATH>", str(repo)))
+print(f"Updated {settings}")
+PY
+```
+
+If your Claude Code configuration is stored somewhere else, copy the generated `hooks` entries into that settings file and keep the hook script paths absolute.
+
 ### 5. Restart Claude Code
 
 Hook registration changes are safest after a restart or a fresh session.
