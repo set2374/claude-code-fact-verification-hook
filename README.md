@@ -164,6 +164,36 @@ git clone https://github.com/<your-username>/claude-code-fact-verification-hook.
 
 This repo assumes you will reference the hook scripts by absolute path from your Claude Code settings.
 
+
+### 2a. Platform path examples
+
+Common Claude Code settings locations:
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+Example hook repo paths:
+
+- macOS: `/Users/<you>/src/claude-code-fact-verification-hook`
+- Linux: `/home/<you>/src/claude-code-fact-verification-hook`
+- Windows: `C:\Users\<you>\src\claude-code-fact-verification-hook`
+
+Tested copy/paste examples:
+
+```bash
+# macOS
+cp settings.example.json ~/Library/Application\ Support/Claude/claude_desktop_config.json
+
+# Linux
+cp settings.example.json ~/.config/Claude/claude_desktop_config.json
+```
+
+```powershell
+# Windows PowerShell
+Copy-Item settings.example.json $env:APPDATA\Claude\claude_desktop_config.json
+```
+
 ### 3. Optional: create a config file
 
 Copy:
