@@ -164,6 +164,20 @@ git clone https://github.com/<your-username>/claude-code-fact-verification-hook.
 
 This repo assumes you will reference the hook scripts by absolute path from your Claude Code settings.
 
+Choose a stable location that will not move between Claude Code sessions. Common choices are:
+
+| Platform | Example repo path | Typical Claude Code settings path |
+| --- | --- | --- |
+| macOS | `/Users/alice/tools/claude-code-fact-verification-hook` | `/Users/alice/.claude/settings.json` |
+| Linux | `/home/alice/tools/claude-code-fact-verification-hook` | `/home/alice/.claude/settings.json` |
+| Windows | `C:\Users\Alice\tools\claude-code-fact-verification-hook` | `C:\Users\Alice\.claude\settings.json` |
+
+You can confirm your home directory with:
+
+```bash
+echo "$HOME"
+```
+
 ### 3. Optional: create a config file
 
 Copy:
@@ -179,6 +193,94 @@ if you want custom thresholds or MCP regex patterns.
 ### 4. Register the hooks
 
 Use `settings.example.json` as a starting point and replace `<REPO_PATH>` with your real absolute path.
+
+For macOS, if you cloned the repo into `/Users/alice/tools/claude-code-fact-verification-hook`, copy this into `/Users/alice/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"/Users/alice/tools/claude-code-fact-verification-hook/hooks/fact_prompt_gate.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Read|WebFetch|WebSearch|Bash|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"/Users/alice/tools/claude-code-fact-verification-hook/hooks/track_verification.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"/Users/alice/tools/claude-code-fact-verification-hook/hooks/verification_stop_gate.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+For Linux, if you cloned the repo into `/home/alice/tools/claude-code-fact-verification-hook`, copy this into `/home/alice/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"/home/alice/tools/claude-code-fact-verification-hook/hooks/fact_prompt_gate.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Read|WebFetch|WebSearch|Bash|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"/home/alice/tools/claude-code-fact-verification-hook/hooks/track_verification.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"/home/alice/tools/claude-code-fact-verification-hook/hooks/verification_stop_gate.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+If your `settings.json` already has hooks, merge the matching `UserPromptSubmit`, `PostToolUse`, and `Stop` entries instead of replacing the whole file.
 
 ### 5. Restart Claude Code
 
