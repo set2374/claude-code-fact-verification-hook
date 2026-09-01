@@ -82,6 +82,9 @@ def extract_text(value) -> str:
         parts = [extract_text(item) for item in value]
         return "\n".join(part for part in parts if part).strip()
     if isinstance(value, dict):
+        block_type = str(value.get("type") or "").lower()
+        if block_type in {"thinking", "redacted_thinking"}:
+            return ""
         for key in ("text", "message", "content", "value", "output", "result"):
             if key in value:
                 text = extract_text(value.get(key))

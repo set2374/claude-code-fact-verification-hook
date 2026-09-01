@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -17,11 +18,20 @@ HOOKS = ROOT / "hooks"
 TEMP = Path(tempfile.gettempdir())
 SESSION = "standalone-fact-hook-smoke"
 STATE = TEMP / f"fact-verification-{SESSION}"
+PYTHON = sys.executable
+
+sys.path.insert(0, str(HOOKS))
+
+from verification_stop_gate import (  # noqa: E402
+    get_last_assistant_message,
+    response_has_verification_caveat,
+    response_is_non_assertive,
+)
 
 
 def run(script_name: str, payload: dict) -> dict:
     proc = subprocess.run(
-        ["python", str(HOOKS / script_name)],
+        [PYTHON, str(HOOKS / script_name)],
         input=json.dumps(payload),
         text=True,
         capture_output=True,
@@ -39,10 +49,40 @@ def expect(name: str, result: dict, predicate, failures: list[str]) -> None:
         failures.append(f"{name} failed: {json.dumps(result, ensure_ascii=True)}")
 
 
-def main() -> None:
+def reset_state() -> None:
     if STATE.exists():
         shutil.rmtree(STATE)
     STATE.mkdir(parents=True, exist_ok=True)
+
+
+def write_transcript(path: Path, rows: list[object]) -> None:
+    lines = []
+    for row in rows:
+        if isinstance(row, str):
+            lines.append(row)
+        else:
+            lines.append(json.dumps(row))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def check_bool(name: str, value: bool) -> tuple[str, dict]:
+    return (
+        name,
+        {
+            "code": 0 if value else 1,
+            "stdout": "",
+            "stderr": "" if value else "boolean check failed",
+        },
+    )
+
+
+def main() -> None:
+    reset_state()
+
+    transcript_dir = TEMP / f"fact-hook-transcripts-{SESSION}"
+    if transcript_dir.exists():
+        shutil.rmtree(transcript_dir)
+    transcript_dir.mkdir(parents=True, exist_ok=True)
 
     results = []
     prompt_payload = {
@@ -92,9 +132,7 @@ def main() -> None:
     results.append(("stop_blocks_unstructured_after_verification", run("verification_stop_gate.py", unverified_stop)))
     results.append(("stop_allows_structured_verified", run("verification_stop_gate.py", structured_stop)))
 
-    if STATE.exists():
-        shutil.rmtree(STATE)
-    STATE.mkdir(parents=True, exist_ok=True)
+    reset_state()
     run("fact_prompt_gate.py", prompt_payload)
     caveated_stop = {
         "session_id": SESSION,
@@ -102,9 +140,7 @@ def main() -> None:
     }
     results.append(("stop_blocks_caveat_without_attempt", run("verification_stop_gate.py", caveated_stop)))
 
-    if STATE.exists():
-        shutil.rmtree(STATE)
-    STATE.mkdir(parents=True, exist_ok=True)
+    reset_state()
     run("fact_prompt_gate.py", prompt_payload)
     searched = {
         "session_id": SESSION,
@@ -114,9 +150,7 @@ def main() -> None:
     results.append(("track_web_search", run("track_verification.py", searched)))
     results.append(("stop_allows_websearch_verified", run("verification_stop_gate.py", structured_stop)))
 
-    if STATE.exists():
-        shutil.rmtree(STATE)
-    STATE.mkdir(parents=True, exist_ok=True)
+    reset_state()
     run("fact_prompt_gate.py", narrative_prompt_payload)
     missing_message_stop = {
         "session_id": SESSION,
@@ -124,15 +158,109 @@ def main() -> None:
     }
     results.append(("stop_blocks_missing_message", run("verification_stop_gate.py", missing_message_stop)))
 
+    reset_state()
+    run("fact_prompt_gate.py", prompt_payload)
+    clarifying_stop = {
+        "session_id": SESSION,
+        "last_assistant_message": "Could you clarify which Claude Code host version and date range you want checked?",
+    }
+    results.append(("stop_allows_clarifying_question", run("verification_stop_gate.py", clarifying_stop)))
+
+    nested_transcript = transcript_dir / "nested-assistant.jsonl"
+    nested_transcript_message = "The latest hook schema includes Stop, PreToolUse, PostToolUse, and UserPromptSubmit."
+    write_transcript(
+        nested_transcript,
+        [
+            "",
+            "not-json",
+            {"role": "user", "content": "What is the latest Claude Code hook schema?"},
+            {
+                "type": "assistant_message",
+                "message": {
+                    "content": [
+                        {"type": "thinking", "text": "I should verify this."},
+                        {"type": "text", "text": nested_transcript_message},
+                    ]
+                },
+            },
+        ],
+    )
+    results.append(
+        check_bool(
+            "extracts_nested_transcript_assistant_message",
+            get_last_assistant_message({"transcript_path": str(nested_transcript)}) == nested_transcript_message,
+        )
+    )
+
+    reset_state()
+    run("fact_prompt_gate.py", prompt_payload)
+    results.append(
+        (
+            "stop_blocks_nested_transcript_assistant",
+            run(
+                "verification_stop_gate.py",
+                {"session_id": SESSION, "transcript_path": str(nested_transcript)},
+            ),
+        )
+    )
+
+    malformed_transcript = transcript_dir / "malformed-only.jsonl"
+    write_transcript(
+        malformed_transcript,
+        [
+            "",
+            "{not json",
+            {"role": "user", "content": "What is the latest Claude Code hook schema?"},
+            {"type": "assistant_message", "message": {"content": []}},
+        ],
+    )
+    reset_state()
+    run("fact_prompt_gate.py", prompt_payload)
+    results.append(
+        (
+            "stop_allows_malformed_transcript_when_active",
+            run(
+                "verification_stop_gate.py",
+                {
+                    "session_id": SESSION,
+                    "transcript_path": str(malformed_transcript),
+                    "stop_hook_active": True,
+                },
+            ),
+        )
+    )
+
+    results.extend(
+        [
+            check_bool(
+                "detects_unable_to_verify_caveat",
+                response_has_verification_caveat("I was unable to verify this from reliable sources."),
+            ),
+            check_bool(
+                "detects_best_effort_caveat",
+                response_has_verification_caveat("This is a best-effort answer based on currently available information."),
+            ),
+            check_bool(
+                "does_not_treat_plain_answer_as_caveat",
+                not response_has_verification_caveat("This answer is verified and final."),
+            ),
+            check_bool(
+                "detects_non_assertive_clarifying_question",
+                response_is_non_assertive("Could you clarify which release channel you mean?"),
+            ),
+        ]
+    )
+
     py_compile = subprocess.run(
         [
-            "python",
+            PYTHON,
             "-m",
             "py_compile",
             str(HOOKS / "common.py"),
             str(HOOKS / "fact_prompt_gate.py"),
             str(HOOKS / "track_verification.py"),
             str(HOOKS / "verification_stop_gate.py"),
+            str(ROOT / "scripts" / "smoke_test.py"),
         ],
         text=True,
         capture_output=True,
@@ -161,9 +289,18 @@ def main() -> None:
     expect("track_web_search", result_map["track_web_search"], lambda item: item["code"] == 0, failures)
     expect("stop_allows_websearch_verified", result_map["stop_allows_websearch_verified"], lambda item: item["code"] == 0 and not item["stdout"], failures)
     expect("stop_blocks_missing_message", result_map["stop_blocks_missing_message"], lambda item: "\"decision\": \"block\"" in item["stdout"], failures)
+    expect("stop_allows_clarifying_question", result_map["stop_allows_clarifying_question"], lambda item: item["code"] == 0 and not item["stdout"], failures)
+    expect("extracts_nested_transcript_assistant_message", result_map["extracts_nested_transcript_assistant_message"], lambda item: item["code"] == 0, failures)
+    expect("stop_blocks_nested_transcript_assistant", result_map["stop_blocks_nested_transcript_assistant"], lambda item: "\"decision\": \"block\"" in item["stdout"], failures)
+    expect("stop_allows_malformed_transcript_when_active", result_map["stop_allows_malformed_transcript_when_active"], lambda item: item["code"] == 0 and not item["stdout"], failures)
+    expect("detects_unable_to_verify_caveat", result_map["detects_unable_to_verify_caveat"], lambda item: item["code"] == 0, failures)
+    expect("detects_best_effort_caveat", result_map["detects_best_effort_caveat"], lambda item: item["code"] == 0, failures)
+    expect("does_not_treat_plain_answer_as_caveat", result_map["does_not_treat_plain_answer_as_caveat"], lambda item: item["code"] == 0, failures)
+    expect("detects_non_assertive_clarifying_question", result_map["detects_non_assertive_clarifying_question"], lambda item: item["code"] == 0, failures)
     expect("py_compile", result_map["py_compile"], lambda item: item["code"] == 0, failures)
 
     print(json.dumps(results, indent=2))
+    shutil.rmtree(transcript_dir, ignore_errors=True)
     if failures:
         raise SystemExit("\n".join(failures))
 
